@@ -1,0 +1,8 @@
+# 公文格式自动调整工具 - Web版依赖
+
+# Word文档处理（必需）
+python-docx>=0.8.11
+
+# Web框架
+Flask>=2.3.0
+Werkzeug>=2.3.0

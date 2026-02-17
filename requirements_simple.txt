@@ -1,0 +1,9 @@
+# 公文格式自动调整工具 - 精简版依赖
+
+# Word文档处理（必需）
+python-docx>=0.8.11
+
+# 注意：
+# - tkinter是Python内置库，无需安装
+# - 精简版不需要tkinterdnd2（不支持拖拽，只用按钮选择文件）
+# - 如果您的Python缺少tkinter，可能需要重新安装Python，或安装python3-tk包
