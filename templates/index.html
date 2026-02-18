@@ -62,6 +62,88 @@
             font-size: 16px;
         }
 
+        .mode-selector {
+            margin-bottom: 30px;
+            background: #f8f9ff;
+            border-radius: 15px;
+            padding: 25px;
+        }
+
+        .mode-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .mode-options {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .mode-option {
+            display: flex;
+            align-items: center;
+            padding: 15px 20px;
+            border: 2px solid #e0e0e0;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            background: white;
+        }
+
+        .mode-option:hover {
+            border-color: #667eea;
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.15);
+            transform: translateY(-2px);
+        }
+
+        .mode-option input[type="radio"] {
+            margin-right: 15px;
+            width: 20px;
+            height: 20px;
+            cursor: pointer;
+            accent-color: #667eea;
+        }
+
+        .mode-option input[type="radio"]:checked + .mode-label {
+            color: #667eea;
+        }
+
+        .mode-option input[type="radio"]:checked ~ * {
+            font-weight: 600;
+        }
+
+        .mode-label {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            flex: 1;
+        }
+
+        .mode-icon {
+            font-size: 28px;
+        }
+
+        .mode-text {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .mode-text strong {
+            font-size: 16px;
+            color: #333;
+        }
+
+        .mode-text small {
+            font-size: 13px;
+            color: #666;
+            font-weight: 400;
+        }
+
         .upload-area {
             border: 3px dashed #667eea;
             border-radius: 15px;
@@ -258,6 +340,42 @@
             <p>按照 GB/T 9704-2012 标准自动调整 Word 文档格式</p>
         </div>
 
+        <div class="mode-selector">
+            <div class="mode-title">处理模式</div>
+            <div class="mode-options">
+                <label class="mode-option">
+                    <input type="radio" name="mode" value="both" checked>
+                    <span class="mode-label">
+                        <span class="mode-icon">🚀</span>
+                        <span class="mode-text">
+                            <strong>双模式（推荐）</strong>
+                            <small>同时生成原版和LLM增强版</small>
+                        </span>
+                    </span>
+                </label>
+                <label class="mode-option">
+                    <input type="radio" name="mode" value="original">
+                    <span class="mode-label">
+                        <span class="mode-icon">📝</span>
+                        <span class="mode-text">
+                            <strong>仅原有格式化</strong>
+                            <small>使用规则匹配，速度快</small>
+                        </span>
+                    </span>
+                </label>
+                <label class="mode-option">
+                    <input type="radio" name="mode" value="llm">
+                    <span class="mode-label">
+                        <span class="mode-icon">🤖</span>
+                        <span class="mode-text">
+                            <strong>仅LLM增强</strong>
+                            <small>AI智能识别，更准确</small>
+                        </span>
+                    </span>
+                </label>
+            </div>
+        </div>
+
         <div class="upload-area" id="uploadArea">
             <div class="upload-icon">📎</div>
             <div class="upload-text">点击或拖拽文件到这里</div>
@@ -278,7 +396,7 @@
 
         <center>
             <button class="btn" id="uploadBtn" disabled>开始处理</button>
-            <button class="btn download-btn" id="downloadBtn">下载处理后的文件</button>
+            <div id="downloadButtons"></div>
         </center>
 
         <div class="message" id="message"></div>
@@ -288,7 +406,7 @@
         const uploadArea = document.getElementById('uploadArea');
         const fileInput = document.getElementById('fileInput');
         const uploadBtn = document.getElementById('uploadBtn');
-        const downloadBtn = document.getElementById('downloadBtn');
+        const downloadButtons = document.getElementById('downloadButtons');
         const fileInfo = document.getElementById('fileInfo');
         const fileName = document.getElementById('fileName');
         const fileSize = document.getElementById('fileSize');
@@ -298,7 +416,6 @@
         const spinner = document.getElementById('spinner');
 
         let selectedFile = null;
-        let downloadUrl = null;
 
         // 点击上传区域
         uploadArea.addEventListener('click', () => {
@@ -347,7 +464,7 @@
             fileSize.textContent = formatFileSize(file.size);
             fileInfo.style.display = 'block';
             uploadBtn.disabled = false;
-            downloadBtn.style.display = 'none';
+            downloadButtons.innerHTML = '';
             message.style.display = 'none';
         }
 
@@ -362,8 +479,12 @@
         uploadBtn.addEventListener('click', async () => {
             if (!selectedFile) return;
 
+            // 获取选择的模式
+            const selectedMode = document.querySelector('input[name="mode"]:checked').value;
+
             const formData = new FormData();
             formData.append('file', selectedFile);
+            formData.append('mode', selectedMode);
 
             // 显示进度
             uploadBtn.disabled = true;
@@ -372,7 +493,7 @@
             progressBar.style.display = 'block';
             progressFill.style.width = '30%';
             message.style.display = 'none';
-            downloadBtn.style.display = 'none';
+            downloadButtons.innerHTML = '';
 
             try {
                 const response = await fetch('/upload', {
@@ -388,11 +509,28 @@
 
                 if (result.success) {
                     showMessage('✅ 处理完成！点击下方按钮下载文件', 'success');
-                    downloadUrl = result.download_url;
-                    downloadBtn.style.display = 'inline-block';
-                    downloadBtn.onclick = () => {
-                        window.location.href = downloadUrl;
-                    };
+                    
+                    // 生成下载按钮
+                    downloadButtons.innerHTML = '';
+                    result.files.forEach(fileInfo => {
+                        const btn = document.createElement('button');
+                        btn.className = 'btn download-btn';
+                        btn.style.display = 'inline-block';
+                        
+                        if (fileInfo.type === 'original') {
+                            btn.textContent = '📝 下载原版格式化';
+                            btn.style.background = 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)';
+                        } else {
+                            btn.textContent = '🤖 下载LLM增强版';
+                            btn.style.background = 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)';
+                        }
+                        
+                        btn.onclick = () => {
+                            window.location.href = fileInfo.download_url;
+                        };
+                        
+                        downloadButtons.appendChild(btn);
+                    });
                 } else {
                     showMessage('❌ ' + (result.error || '处理失败'), 'error');
                 }

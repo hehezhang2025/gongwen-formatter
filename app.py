@@ -17,6 +17,7 @@ from datetime import datetime
 
 # 导入核心格式化函数
 from gongwen_formatter_cli import format_document
+from llm_formatter import llm_format_document
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB 最大文件大小
@@ -126,47 +127,114 @@ def upload_file():
         if not allowed_file(file.filename):
             return jsonify({'success': False, 'error': '只支持 .docx 格式的文件'}), 400
         
+        # 获取处理模式（默认双模式）
+        mode = request.form.get('mode', 'both')
+        
         # 保存上传的文件
         filename = secure_filename(file.filename)
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         temp_input = os.path.join(app.config['UPLOAD_FOLDER'], f'temp_{timestamp}_{filename}')
         file.save(temp_input)
         
-        # 处理文档
-        success = format_document(temp_input)
-        
-        if not success:
-            os.remove(temp_input)
-            return jsonify({'success': False, 'error': '文档处理失败，请检查文档格式'}), 500
-        
-        # 获取输出文件路径
         dir_name = os.path.dirname(temp_input)
         base_name = os.path.basename(temp_input)
-        output_path = os.path.join(dir_name, f"done_{base_name}")
         
-        # 检查输出文件是否存在
-        if not os.path.exists(output_path):
+        results = []
+        error_messages = []
+        
+        # 模式1: 原有格式化
+        if mode in ['original', 'both']:
+            print("\n" + "="*60)
+            print("开始原有格式化...")
+            print("="*60)
+            try:
+                success_original = format_document(temp_input)
+                if success_original:
+                    original_output = os.path.join(dir_name, f"done_{base_name}")
+                    
+                    # 检查文件是否存在
+                    if os.path.exists(original_output):
+                        # 读取并保存到新位置
+                        with open(original_output, 'rb') as f:
+                            output_data = f.read()
+                        
+                        final_output = os.path.join(app.config['UPLOAD_FOLDER'], f'done_{timestamp}_{filename}')
+                        with open(final_output, 'wb') as f:
+                            f.write(output_data)
+                        
+                        # 删除原输出文件
+                        os.remove(original_output)
+                        
+                        results.append({
+                            'type': 'original',
+                            'download_url': f'/download/{os.path.basename(final_output)}',
+                            'filename': f'done_{filename}'
+                        })
+                        print(f"✅ 原版格式化完成: {final_output}")
+                    else:
+                        error_messages.append("原版格式化: 输出文件未生成")
+                else:
+                    error_messages.append("原版格式化: 处理失败")
+            except Exception as e:
+                error_messages.append(f"原版格式化失败: {str(e)}")
+                print(f"❌ 原版格式化失败: {str(e)}")
+        
+        # 模式2: LLM增强格式化
+        if mode in ['llm', 'both']:
+            print("\n" + "="*60)
+            print("开始LLM增强格式化...")
+            print("="*60)
+            try:
+                success_llm = llm_format_document(temp_input)
+                if success_llm:
+                    llm_output = os.path.join(dir_name, f"llm_{base_name}")
+                    
+                    # 检查文件是否存在
+                    if os.path.exists(llm_output):
+                        # 读取并保存到新位置
+                        with open(llm_output, 'rb') as f:
+                            output_data = f.read()
+                        
+                        final_output = os.path.join(app.config['UPLOAD_FOLDER'], f'llm_{timestamp}_{filename}')
+                        with open(final_output, 'wb') as f:
+                            f.write(output_data)
+                        
+                        # 删除原输出文件
+                        os.remove(llm_output)
+                        
+                        results.append({
+                            'type': 'llm',
+                            'download_url': f'/download/{os.path.basename(final_output)}',
+                            'filename': f'llm_{filename}'
+                        })
+                        print(f"✅ LLM增强版完成: {final_output}")
+                    else:
+                        error_messages.append("LLM增强: 输出文件未生成")
+                else:
+                    error_messages.append("LLM增强: 处理失败")
+            except Exception as e:
+                error_messages.append(f"LLM增强失败: {str(e)}")
+                print(f"❌ LLM增强失败: {str(e)}")
+        
+        # 清理上传的临时文件
+        if os.path.exists(temp_input):
             os.remove(temp_input)
-            return jsonify({'success': False, 'error': '输出文件生成失败'}), 500
         
-        # 读取输出文件
-        with open(output_path, 'rb') as f:
-            output_data = f.read()
-        
-        # 清理临时文件
-        os.remove(temp_input)
-        os.remove(output_path)
-        
-        # 保存处理后的文件到临时位置
-        final_output = os.path.join(app.config['UPLOAD_FOLDER'], f'done_{timestamp}_{filename}')
-        with open(final_output, 'wb') as f:
-            f.write(output_data)
+        # 判断处理结果
+        if len(results) == 0:
+            # 完全失败
+            error_msg = "处理失败: " + "; ".join(error_messages)
+            return jsonify({'success': False, 'error': error_msg}), 500
+        elif len(error_messages) > 0:
+            # 部分失败（双模式时）
+            warning_msg = "部分成功: " + "; ".join(error_messages)
+            print(f"⚠️  {warning_msg}")
         
         # 返回文件下载链接
         return jsonify({
             'success': True,
-            'download_url': f'/download/{os.path.basename(final_output)}',
-            'filename': f'done_{filename}'
+            'files': results,
+            'warnings': error_messages if len(error_messages) > 0 else None
         })
         
     except Exception as e:
